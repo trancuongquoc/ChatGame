@@ -21,6 +21,7 @@
 		5ECF0A1C213FC765000CF1D5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5ECF0A1B213FC765000CF1D5 /* Assets.xcassets */; };
 		5ECF0A1F213FC765000CF1D5 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5ECF0A1D213FC765000CF1D5 /* LaunchScreen.storyboard */; };
 		5ECF0A28213FC986000CF1D5 /* LoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ECF0A27213FC986000CF1D5 /* LoginController.swift */; };
+		5EDC3C4E2149534C00B68154 /* MessageCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EDC3C4D2149534C00B68154 /* MessageCell.swift */; };
 		FBE4D2420524644F1FC524E5 /* Pods_ChatGame.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C159BEAC69F20A04EF425EF1 /* Pods_ChatGame.framework */; };
 /* End PBXBuildFile section */
 
@@ -42,6 +43,7 @@
 		5ECF0A1E213FC765000CF1D5 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		5ECF0A20213FC765000CF1D5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		5ECF0A27213FC986000CF1D5 /* LoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginController.swift; sourceTree = "<group>"; };
+		5EDC3C4D2149534C00B68154 /* MessageCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCell.swift; sourceTree = "<group>"; };
 		739086CA91B262E61A87B69C /* Pods-ChatGame.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChatGame.release.xcconfig"; path = "Pods/Target Support Files/Pods-ChatGame/Pods-ChatGame.release.xcconfig"; sourceTree = "<group>"; };
 		C159BEAC69F20A04EF425EF1 /* Pods_ChatGame.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_ChatGame.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -97,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				5E7157F121479E3E00416C93 /* UserCell.swift */,
+				5EDC3C4D2149534C00B68154 /* MessageCell.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -266,6 +269,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5EDC3C4E2149534C00B68154 /* MessageCell.swift in Sources */,
 				5E7157ED214779E100416C93 /* ChatLogController.swift in Sources */,
 				5ECF0A17213FC764000CF1D5 /* MessagesController.swift in Sources */,
 				5ECF0A28213FC986000CF1D5 /* LoginController.swift in Sources */,

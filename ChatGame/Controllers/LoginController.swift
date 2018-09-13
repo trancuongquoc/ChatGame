@@ -112,12 +112,8 @@ class LoginController: UIViewController {
             }
             
             print("Successfully saved user.")
+            let user = User(dictionary: values)
             
-            let user = User()
-            user.name = values["name"] as? String
-            user.email = values["email"] as? String
-            user.profileImageUrl = values["profileImageUrl"] as? String
-
             self.messageController?.setupNavBarWithUser(user)
             self.dismiss(animated: true, completion: nil)
         })

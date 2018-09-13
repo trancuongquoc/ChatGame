@@ -18,6 +18,8 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
     var messages = [Message]()
     var messagesDictionary = [String: Message]()
     
+    var timer: Timer?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -31,82 +33,50 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
         
         tableView.register(UserCell.self, forCellReuseIdentifier: cellId)
         
-//        observerMessages()
-        observeUserMessages()
     }
     
     func observeUserMessages() {
-        guard let uid = Auth.auth().currentUser?.uid else {
+        guard let currentUserUID = Auth.auth().currentUser?.uid else {
             return
         }
+        print(currentUserUID)
+        let ref = Database.database().reference().child("user-messages").child(currentUserUID)
         
-        let ref = Database.database().reference().child("user-messages").child(uid)
-        ref.observe(.childAdded) { (snapshot) in
-            
-            let messagesId = snapshot.key
-            let messagesReference = Database.database().reference().child("messages").child(messagesId)
+        ref.observe(.childAdded, with: { (snapshot) in
+            let messageId = snapshot.key
+            let messagesReference = Database.database().reference().child("messages").child(messageId)
             
             messagesReference.observeSingleEvent(of: .value, with: { (snapshot) in
+                if let dictionary = snapshot.value as? [String: AnyObject] {
                     
-                    if let dictionary = snapshot.value as? [String: AnyObject] {
-                        let message = Message()
-                        message.fromId = dictionary["fromId"] as? String
-                        message.text = dictionary["text"] as? String
-                        message.timestamp = dictionary["timestamp"] as? NSNumber
-                        message.toId = dictionary["toId"] as? String
+               let message = Message(dictionary: dictionary)
+                    
+                    if let chatPartnerId = message.chatPartnerId() {
+                    
+                        self.messagesDictionary[chatPartnerId] = message
                         
-                        guard let chatPartnerId = message.fromId == uid ? message.toId : message.fromId else {
-                            return
-                        }
+                        self.messages = Array(self.messagesDictionary.values)
                         
-                        if let toId = message.toId {
-                            self.messagesDictionary[toId] = message
-                            
-                            self.messages = Array(self.messagesDictionary.values)
-                            
-                            self.messages.sort(by: { (message1, message2) -> Bool in
-                                return (message1.timestamp?.intValue)! > (message2.timestamp?.intValue)!
-                            })
-                        }
-                     
-                        DispatchQueue.main.async {
-                            self.tableView.reloadData()
-                        }
-            }
-        })
+                        self.messages.sort(by: { (message1, message2) -> Bool in
+                            return (message1.timestamp?.intValue)! > (message2.timestamp?.intValue)!
+                        })
+                    }
+                    
+                    self.timer?.invalidate()
+                    self.timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.handleReloadTableView), userInfo: nil, repeats: false)
+                
+                }
+            })
+        }, withCancel: nil)
+        
+
     }
-}
     
-    func observerMessages() {
-        let ref = Database.database().reference().child("messages")
-        ref.observe(.childAdded) { (snapshot) in
-           
-            if let dictionary = snapshot.value as? [String: AnyObject] {
-                let message = Message()
-                message.fromId = dictionary["fromId"] as? String
-                message.text = dictionary["text"] as? String
-                message.timestamp = dictionary["timestamp"] as? NSNumber
-                message.toId = dictionary["toId"] as? String
-                self.messages.append(message)
-                
-                if let toId = message.toId {
-                    self.messagesDictionary[toId] = message
-                    
-                    self.messages = Array(self.messagesDictionary.values)
-                    
-                    self.messages.sort(by: { (message1, message2) -> Bool in
-                       return (message1.timestamp?.intValue)! > (message2.timestamp?.intValue)!
-                    })
-                }
-                
-                DispatchQueue.main.async {
-                    self.tableView.reloadData()
-                }
-                print(message.text)
-            }
+    @objc func handleReloadTableView() {
+        DispatchQueue.main.async {
+            self.tableView.reloadData()
         }
     }
-
     
     @objc func handleNewMessage() {
         let newMessageController = NewMessageController()
@@ -129,10 +99,7 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
         Database.database().reference().child("users").child(uid).observeSingleEvent(of: .value, with: { (snapshot) in
             
             if let dictionary = snapshot.value as? [String: AnyObject] {
-                let user = User()
-                user.name = dictionary["name"] as? String
-                user.email = dictionary["email"] as? String
-                user.profileImageUrl = dictionary["profileImageUrl"] as? String
+                let user = User(dictionary: dictionary)
                 self.setupNavBarWithUser(user)
             }
             
@@ -173,7 +140,13 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
     }()
     
     func setupNavBarWithUser(_ user: User) {
-
+        
+        messages.removeAll()
+        messagesDictionary.removeAll()
+        tableView.reloadData()
+        
+        observeUserMessages()
+        
         if let profileImageUrl = user.profileImageUrl {
             profileImageView.loadImageUsingCacheWith(profileImageUrl)
         }
@@ -227,6 +200,26 @@ extension MessagesController {
         cell.message = message
         
         return cell
+    }
+    
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let message = messages[indexPath.row]
+        
+        let chatPartnerId = message.chatPartnerId()
+        
+        let ref = Database.database().reference().child("users").child(chatPartnerId!)
+        
+        ref.observeSingleEvent(of: .value) { (snapshot) in
+            
+            guard let dictionary = snapshot.value as? [String: AnyObject] else {
+                return
+            }
+            
+            let user = User(dictionary: dictionary)
+            user.id = snapshot.key
+            self.showChatControllerForUser(user)
+        }
+        
     }
     
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
