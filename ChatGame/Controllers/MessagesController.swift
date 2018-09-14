@@ -39,40 +39,53 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
         guard let currentUserUID = Auth.auth().currentUser?.uid else {
             return
         }
+        
         print(currentUserUID)
         let ref = Database.database().reference().child("user-messages").child(currentUserUID)
         
         ref.observe(.childAdded, with: { (snapshot) in
-            let messageId = snapshot.key
-            let messagesReference = Database.database().reference().child("messages").child(messageId)
+            let userId = snapshot.key
             
-            messagesReference.observeSingleEvent(of: .value, with: { (snapshot) in
-                if let dictionary = snapshot.value as? [String: AnyObject] {
-                    
-               let message = Message(dictionary: dictionary)
-                    
-                    if let chatPartnerId = message.chatPartnerId() {
-                    
-                        self.messagesDictionary[chatPartnerId] = message
-                        
-                        self.messages = Array(self.messagesDictionary.values)
-                        
-                        self.messages.sort(by: { (message1, message2) -> Bool in
-                            return (message1.timestamp?.intValue)! > (message2.timestamp?.intValue)!
-                        })
-                    }
-                    
-                    self.timer?.invalidate()
-                    self.timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.handleReloadTableView), userInfo: nil, repeats: false)
-                
-                }
+            Database.database().reference().child("user-messages").child(currentUserUID).child(userId).observe(.childAdded, with: { (snapshot) in
+
+                let messageId = snapshot.key
+                self.fetchMessage(with: messageId)
             })
+            
         }, withCancel: nil)
         
-
+    }
+    
+    private func fetchMessage(with messageId: String) {
+        let messagesReference = Database.database().reference().child("messages").child(messageId)
+        
+        messagesReference.observeSingleEvent(of: .value, with: { (snapshot) in
+            if let dictionary = snapshot.value as? [String: AnyObject] {
+                
+                let message = Message(dictionary: dictionary)
+                
+                if let chatPartnerId = message.chatPartnerId() {
+                    self.messagesDictionary[chatPartnerId] = message
+                }
+                
+                self.attemptToReloadCollectionView()
+            }
+        })
+    }
+    
+    private func attemptToReloadCollectionView() {
+        self.timer?.invalidate()
+        self.timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.handleReloadTableView), userInfo: nil, repeats: false)
     }
     
     @objc func handleReloadTableView() {
+        
+        self.messages = Array(self.messagesDictionary.values)
+        
+        self.messages.sort(by: { (message1, message2) -> Bool in
+            return (message1.timestamp?.intValue)! > (message2.timestamp?.intValue)!
+        })
+        
         DispatchQueue.main.async {
             self.tableView.reloadData()
         }
@@ -85,6 +98,7 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
         present(navController, animated: true, completion: nil)
         
     }
+    
     
     func checkIfUserLoggedIn() {
         if Auth.auth().currentUser?.uid == nil {
