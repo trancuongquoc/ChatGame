@@ -43,7 +43,6 @@ class UserCell: UITableViewCell {
                     }
                 }
                 
-                print(snapshot)
             }, withCancel: nil)
         }
     }

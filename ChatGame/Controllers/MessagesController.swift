@@ -32,15 +32,39 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
         checkIfUserLoggedIn()
         
         tableView.register(UserCell.self, forCellReuseIdentifier: cellId)
-        
+        tableView.allowsMultipleSelectionDuringEditing = true
     }
+    
+    override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
+        return true
+    }
+    
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
+        guard let CurrentUserUid = Auth.auth().currentUser?.uid else {
+            return
+        }
+        
+        if let chatPartnerId = messages[indexPath.row].chatPartnerId() {
+            Database.database().reference().child("user-messages").child(CurrentUserUid).child(chatPartnerId).removeValue { (error, ref) in
+                
+                if error != nil {
+                    print("Failed to delete conversation.", error)
+                    return
+                }
+                
+                self.messagesDictionary.removeValue(forKey: chatPartnerId)
+                self.attemptToReloadCollectionView()
+            }
+        }
+    }
+    
+    
     
     func observeUserMessages() {
         guard let currentUserUID = Auth.auth().currentUser?.uid else {
             return
         }
         
-        print(currentUserUID)
         let ref = Database.database().reference().child("user-messages").child(currentUserUID)
         
         ref.observe(.childAdded, with: { (snapshot) in
@@ -53,6 +77,11 @@ class MessagesController: UITableViewController, UIGestureRecognizerDelegate {
             })
             
         }, withCancel: nil)
+        
+        ref.observe(.childRemoved) { (snapshot) in
+            self.messagesDictionary.removeValue(forKey: snapshot.key)
+            self.attemptToReloadCollectionView()
+        }
         
     }
     

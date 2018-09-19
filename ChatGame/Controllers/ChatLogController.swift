@@ -8,9 +8,13 @@
 
 import UIKit
 import Firebase
+import MobileCoreServices
+import AVFoundation
 
-class ChatLogController: UICollectionViewController, UITextFieldDelegate {
+class ChatLogController: UICollectionViewController, UITextFieldDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     
+ 
+
     let cellId = "cellid"
     
     var messages = [Message]()
@@ -23,6 +27,10 @@ class ChatLogController: UICollectionViewController, UITextFieldDelegate {
         }
     }
     
+    var startingFrame: CGRect?
+    var blackBackgroundView: UIView?
+    var startingImageView: UIImageView?
+        
     func observeMessages() {
         guard let currentUserUid = Auth.auth().currentUser?.uid, let toId = user?.id else { return }
         
@@ -42,20 +50,15 @@ class ChatLogController: UICollectionViewController, UITextFieldDelegate {
                 
                 DispatchQueue.main.async {
                     self.collectionView?.reloadData()
+                    let indexPath = IndexPath(item: self.messages.count - 1, section: 0)
+                    
+                    self.collectionView?.scrollToItem(at: indexPath, at: .bottom, animated: true)
                 }
             
                 
             })
         }
     }
-    
-    lazy var inputTextField: UITextField = {
-        let textField = UITextField()
-        textField.placeholder = "Enter messages..."
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        textField.delegate = self
-        return textField
-    }()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -66,51 +69,149 @@ class ChatLogController: UICollectionViewController, UITextFieldDelegate {
         collectionView?.backgroundColor = UIColor.white
         collectionView?.register(MessageCell.self, forCellWithReuseIdentifier: cellId)
         collectionView?.keyboardDismissMode = .interactive
-        setupInputComponents()
-//
-//        keyboardObservers()
+        observeKeyboard()
     }
     
-    lazy var inputContainerView: UIView = {
-        let containerView = UIView()
-        containerView.frame = CGRect(x: 0, y: 0, width: self.view.frame.width, height: 50)
-        containerView.backgroundColor = UIColor.white
-        
-        let textField = UITextField()
-        textField.placeholder = "..."
-        containerView.addSubview(textField)
-        textField.frame = CGRect(x: 0, y: 0, width: self.view.frame.width, height: 50)
-        
-        let sendButton = UIButton(type: .system)
-        sendButton.setTitle("Send", for: .normal)
-        sendButton.translatesAutoresizingMaskIntoConstraints = false
-        sendButton.addTarget(self, action: #selector(handleSendingMessage), for: .touchUpInside)
-        containerView.addSubview(sendButton)
-        
-        sendButton.rightAnchor.constraint(equalTo: containerView.rightAnchor).isActive = true
-        sendButton.centerYAnchor.constraint(equalTo: containerView.centerYAnchor).isActive = true
-        sendButton.widthAnchor.constraint(equalToConstant: 80).isActive = true
-        sendButton.heightAnchor.constraint(equalTo: containerView.heightAnchor).isActive = true
-        
-        
-        containerView.addSubview(inputTextField)
-        
-        inputTextField.leftAnchor.constraint(equalTo: containerView.leftAnchor, constant: 8).isActive = true
-        inputTextField.centerYAnchor.constraint(equalTo: containerView.centerYAnchor).isActive = true
-        inputTextField.rightAnchor.constraint(equalTo: sendButton.leftAnchor).isActive = true
-        inputTextField.heightAnchor.constraint(equalTo: containerView.heightAnchor).isActive = true
-        
-        let seperatorLineView = UIView()
-        seperatorLineView.backgroundColor = UIColor(r: 220, g: 220, b: 220)
-        seperatorLineView.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(seperatorLineView)
-        
-        seperatorLineView.leftAnchor.constraint(equalTo: containerView.leftAnchor).isActive = true
-        seperatorLineView.topAnchor.constraint(equalTo: containerView.topAnchor).isActive = true
-        seperatorLineView.widthAnchor.constraint(equalTo: containerView.widthAnchor).isActive = true
-        seperatorLineView.heightAnchor.constraint(equalToConstant: 1).isActive = true
-        return containerView
+    func observeKeyboard() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleKeyboardDidShow), name: Notification.Name.UIKeyboardDidShow, object: nil)
+    }
+    
+    @objc func handleKeyboardDidShow() {
+        if messages.count > 0 {
+            let indexPath = IndexPath(item: messages.count - 1, section: 0)
+            collectionView?.scrollToItem(at: indexPath, at: .bottom, animated: true)
+        }
+    }
+    
+    lazy var inputContainerView: ChatInputContainerView = {
+        let chatInputContainerView = ChatInputContainerView(frame: CGRect(x: 0, y: 0, width: self.view.frame.width, height: 50))
+        chatInputContainerView.chatLogController = self
+        return chatInputContainerView
     }()
+    
+    @objc func handleUploadTap() {
+        let imagePickerController = UIImagePickerController()
+        imagePickerController.delegate = self
+        imagePickerController.allowsEditing = true
+        imagePickerController.mediaTypes = [kUTTypeImage, kUTTypeMovie] as [String]
+        present(imagePickerController, animated: true, completion: nil)
+    }
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [String : Any]) {
+        
+        if let videoUrl = info[UIImagePickerControllerMediaURL] as? URL {
+            handleVideoSelectedWith(videoUrl)
+        } else {
+            //An image selected
+            handleImageSelectedWith(info as [String : AnyObject])
+        }
+        
+        dismiss(animated: true, completion: nil)
+    }
+    
+    private func handleVideoSelectedWith(_ url: URL) {
+        let fileName = UUID().uuidString + ".mov"
+        
+        let storageRef = Storage.storage().reference().child("message_movies").child(fileName)
+        
+        let uploadTask = storageRef.putFile(from: url, metadata: nil) { (metadata, error) in
+            if error != nil {
+                print("Fail to upload video", error)
+            }
+            
+            
+            
+            storageRef.downloadURL(completion: { (downloadUrl, error) in
+                if error != nil {
+                    print("Fail to achieve video URL", error)
+                }
+            
+                if let videoDownloadUrl = downloadUrl?.absoluteString, let thumbnailImage = self.thumbnailImage(for: url)  {
+                    
+                    self.uploadImageToFirebase(thumbnailImage, completion: { (imageUrl) in
+                        let properties = ["imageUrl": imageUrl, "imageWidth": thumbnailImage.size.width, "imageHeight": thumbnailImage.size.height, "videoUrl": videoDownloadUrl] as [String: AnyObject]
+                        
+                        self.sendMessageWithProperties(properties)
+                    })
+
+                }
+                
+            })
+        }
+        
+        uploadTask.observe(.progress) { (snapshot) in
+            if let completedCount = snapshot.progress?.completedUnitCount {
+                let trackingProgress = "\(completedCount)"
+                self.navigationItem.title = trackingProgress
+            }
+        }
+        
+        uploadTask.observe(.success) { (snapshot) in
+                self.navigationItem.title = self.user?.name
+        }
+    }
+    
+    private func handleImageSelectedWith(_ info: [String: AnyObject]) {
+        
+        var selectedImageFromPicker: UIImage?
+        
+        if let editedImage = info["UIImagePickerControllerEditedImage"] as? UIImage {
+            selectedImageFromPicker = editedImage
+        } else if let originalImage = info["UIImagePickerControllerOriginalImage"] as? UIImage  {
+            selectedImageFromPicker = originalImage
+        }
+        
+        if let selectedImage = selectedImageFromPicker {
+            uploadImageToFirebase(selectedImage) { (imageUrl) in
+                self.sendImageMessage(imageUrl, selectedImage)
+            }
+        }
+    }
+    
+    private func thumbnailImage(for fileUrl: URL) -> UIImage? {
+        let asset = AVAsset(url: fileUrl)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        
+        do {
+            let thumbnailCGImage = try imageGenerator.copyCGImage(at: CMTime(value: 1, timescale: 60), actualTime: nil)
+            
+            return UIImage(cgImage: thumbnailCGImage)
+        } catch let err {
+            print(err)
+        }
+        
+        return nil
+    }
+    
+    private func uploadImageToFirebase(_ image: UIImage, completion: @escaping (_ imageUrl: String) -> () ) {
+        let imageName = NSUUID().uuidString
+        let ref = Storage.storage().reference().child("messages_images").child(imageName)
+        
+        if let uploadData = UIImageJPEGRepresentation(image, 0.2) {
+            ref.putData(uploadData, metadata: nil) { (metadata, error) in
+                if error != nil {
+                    print("Failed to upload", error)
+                    return
+                }
+                
+                ref.downloadURL(completion: { (url, err) in
+                    
+                    if err != nil {
+                        print(err)
+                        return
+                    }
+                    
+                    if let downloadUrl = url?.absoluteString  {
+                        completion(downloadUrl)
+                    }
+                })
+            }
+        }
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        dismiss(animated: true, completion: nil)
+    }
     
     override var inputAccessoryView: UIView? {
         get {
@@ -148,7 +249,6 @@ class ChatLogController: UICollectionViewController, UITextFieldDelegate {
     }
     
     @objc func handleKeyboardWillHide(notification: Notification) {
-        let keyboardFrame = notification.userInfo?[UIKeyboardFrameEndUserInfoKey] as? CGRect
         let keyboardDuration = notification.userInfo?[UIKeyboardAnimationDurationUserInfoKey] as! Double
 
         containerViewBottomAnchor?.constant = 0
@@ -159,61 +259,29 @@ class ChatLogController: UICollectionViewController, UITextFieldDelegate {
     
     var containerViewBottomAnchor: NSLayoutConstraint?
     
-    func setupInputComponents() {
-        let containerView = UIView()
-        containerView.translatesAutoresizingMaskIntoConstraints = false
-        containerView.backgroundColor = UIColor.white
-        
-        view.addSubview(containerView)
-        
-        containerView.leftAnchor.constraint(equalTo: view.leftAnchor).isActive = true
-        containerViewBottomAnchor = containerView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        containerViewBottomAnchor?.isActive = true
-        containerView.widthAnchor.constraint(equalTo: view.widthAnchor).isActive = true
-        containerView.heightAnchor.constraint(equalToConstant: 50).isActive = true
-        
-        let sendButton = UIButton(type: .system)
-        sendButton.setTitle("Send", for: .normal)
-        sendButton.translatesAutoresizingMaskIntoConstraints = false
-        sendButton.addTarget(self, action: #selector(handleSendingMessage), for: .touchUpInside)
-        containerView.addSubview(sendButton)
-        
-        sendButton.rightAnchor.constraint(equalTo: containerView.rightAnchor).isActive = true
-        sendButton.centerYAnchor.constraint(equalTo: containerView.centerYAnchor).isActive = true
-        sendButton.widthAnchor.constraint(equalToConstant: 80).isActive = true
-        sendButton.heightAnchor.constraint(equalTo: containerView.heightAnchor).isActive = true
-
-
-        containerView.addSubview(inputTextField)
-        
-        inputTextField.leftAnchor.constraint(equalTo: containerView.leftAnchor, constant: 8).isActive = true
-        inputTextField.centerYAnchor.constraint(equalTo: containerView.centerYAnchor).isActive = true
-        inputTextField.rightAnchor.constraint(equalTo: sendButton.leftAnchor).isActive = true
-        inputTextField.heightAnchor.constraint(equalTo: containerView.heightAnchor).isActive = true
-        
-        let seperatorLineView = UIView()
-        seperatorLineView.backgroundColor = UIColor(r: 220, g: 220, b: 220)
-        seperatorLineView.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(seperatorLineView)
-        
-        seperatorLineView.leftAnchor.constraint(equalTo: containerView.leftAnchor).isActive = true
-        seperatorLineView.topAnchor.constraint(equalTo: containerView.topAnchor).isActive = true
-        seperatorLineView.widthAnchor.constraint(equalTo: containerView.widthAnchor).isActive = true
-        seperatorLineView.heightAnchor.constraint(equalToConstant: 1).isActive = true
-    }
-    
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        handleSendingMessage()
-        return true
-    }
-    
     @objc func handleSendingMessage() {
+        let properties = ["text": inputContainerView.inputTextField.text!] as [String: AnyObject]
+        
+        sendMessageWithProperties(properties)
+    }
+    
+    private func sendImageMessage(_ imageUrl: String, _ image: UIImage) {
+        
+        let properties = ["imageUrl": imageUrl, "imageWidth": image.size.width, "imageHeight": image.size.height] as [String: AnyObject]
+        
+        sendMessageWithProperties(properties)
+    }
+    
+    private func sendMessageWithProperties(_ properties: [String: AnyObject]) {
         let ref = Database.database().reference().child("messages")
         let childRef = ref.childByAutoId()
         let toId = user!.id!
         let fromId = Auth.auth().currentUser!.uid
         let timestamp = Int(Date.timeIntervalSinceReferenceDate)
-        let values = ["text": inputTextField.text!, "toId": toId, "fromId": fromId, "timestamp": timestamp] as [String : Any]
+        
+        var values = ["toId": toId, "fromId": fromId, "timestamp": timestamp] as [String : Any]
+        
+        properties.forEach { values[$0] = $1 }
         
         childRef.updateChildValues(values) { (err, ref) in
             if err != nil {
@@ -229,9 +297,16 @@ class ChatLogController: UICollectionViewController, UITextFieldDelegate {
             let recipientUserMessagesRef = Database.database().reference().child("user-messages").child(toId).child(fromId)
             recipientUserMessagesRef.updateChildValues([messageId : 1])
             
-            self.inputTextField.text = nil
+            self.inputContainerView.inputTextField.text = nil
         }
     }
+    
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        handleSendingMessage()
+        return true
+    }
+    
+
 }
 
 extension ChatLogController: UICollectionViewDelegateFlowLayout {
@@ -242,13 +317,27 @@ extension ChatLogController: UICollectionViewDelegateFlowLayout {
     override func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: cellId, for: indexPath) as! MessageCell
         
+        cell.chatLogController = self
+        
         let message = messages[indexPath.row]
         
-        cell.bubbleWidthAnchor?.constant = estimatedFrameForText(message.text!).width + 32
+        cell.message = message
         
         cell.textView.text = message.text
         
         setupCellContent(cell: cell, message: message)
+        
+        if let text = message.text {
+            cell.bubbleWidthAnchor?.constant = estimatedFrameForText(text).width + 32
+            cell.textView.isHidden = false
+        } else if message.imageUrl != nil {
+            cell.bubbleWidthAnchor?.constant = 200
+            cell.textView.isHidden = true
+        }
+        
+        cell.playButton.isHidden = message.videoUrl == nil
+        
+        
         
         return cell
     }
@@ -256,8 +345,12 @@ extension ChatLogController: UICollectionViewDelegateFlowLayout {
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         var height: CGFloat = 80
         
-        if let text = messages[indexPath.row].text {
+        let message = messages[indexPath.item]
+        
+        if let text = message.text {
             height = estimatedFrameForText(text).height + 20
+        } else if let imageWidth = message.imageWidth as? Float, let imageHeight = message.imageHeight as? Float {
+            height = CGFloat(imageHeight / imageWidth * 200)
         }
         
         let width = UIScreen.main.bounds.width
@@ -272,6 +365,14 @@ extension ChatLogController: UICollectionViewDelegateFlowLayout {
     if let profileImageUrl = user?.profileImageUrl {
         cell.profileImageView.loadImageUsingCacheWith(profileImageUrl)
     }
+    
+    if let messageImageUrl = message.imageUrl {
+        cell.bubbleView.backgroundColor = UIColor.clear
+        cell.messageImageView.loadImageUsingCacheWith(messageImageUrl)
+        cell.messageImageView.isHidden = false
+    } else {
+        cell.messageImageView.isHidden = true
+    }
         if message.fromId == Auth.auth().currentUser?.uid {
             cell.bubbleView.backgroundColor = MessageCell.bubbleBlueColor
             cell.profileImageView.isHidden = true
@@ -285,10 +386,75 @@ extension ChatLogController: UICollectionViewDelegateFlowLayout {
             cell.bubbleLeftAnchor?.isActive = true
         }
     }
+    
    private func estimatedFrameForText(_ text: String) -> CGRect {
         let size = CGSize(width: 200, height: 100)
         let option = NSStringDrawingOptions.usesFontLeading.union(.usesLineFragmentOrigin)
         return NSString(string: text).boundingRect(with: size, options: option, attributes: [NSAttributedStringKey.font : UIFont.systemFont(ofSize: 16)], context: nil)
     }
     
+}
+
+extension ChatLogController {
+    
+    func performZoomInForStartingImageView(_ startingImageView: UIImageView) {
+        
+        self.startingImageView = startingImageView
+        self.startingImageView?.isHidden = true
+        
+        startingFrame = startingImageView.superview?.convert(startingImageView.frame, to: nil)
+        
+        let zoomingImageView = UIImageView(frame: startingFrame!)
+        zoomingImageView.backgroundColor = UIColor.red
+        zoomingImageView.image = startingImageView.image
+        zoomingImageView.isUserInteractionEnabled = true
+        zoomingImageView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleZoomOut)))
+        
+        if let keyWindow = UIApplication.shared.keyWindow {
+            blackBackgroundView = UIView(frame: keyWindow.frame)
+            blackBackgroundView?.backgroundColor = UIColor.black
+            blackBackgroundView?.alpha = 0
+            keyWindow.addSubview(blackBackgroundView!)
+            
+            keyWindow.addSubview(zoomingImageView)
+            
+            UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: 1, options: .curveEaseOut, animations: {
+                
+                self.blackBackgroundView?.alpha = 1
+                self.inputContainerView.alpha = 0
+                
+                // math?
+                // h2 / w1 = h1 / w1
+                // h2 = h1 / w1 * w1
+                let height = self.startingFrame!.height / self.startingFrame!.width * keyWindow.frame.width
+                
+                zoomingImageView.frame = CGRect(x: 0, y: 0, width: keyWindow.frame.width, height: height)
+                
+                zoomingImageView.center = keyWindow.center
+                
+            }, completion: { (completed) in
+                
+            })
+            
+        }
+    }
+    
+    @objc func handleZoomOut(_ tapGesture: UITapGestureRecognizer) {
+        if let zoomOutImageView = tapGesture.view {
+            //need to animate back out to controller
+            zoomOutImageView.layer.cornerRadius = 16
+            zoomOutImageView.clipsToBounds = true
+            
+            UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: 1, options: .curveEaseOut, animations: {
+                
+                zoomOutImageView.frame = self.startingFrame!
+                self.blackBackgroundView?.alpha = 0
+                self.inputContainerView.alpha = 1
+                
+            }, completion: { (completed) in
+                zoomOutImageView.removeFromSuperview()
+                self.startingImageView?.isHidden = false
+            })
+        }
+    }
 }
